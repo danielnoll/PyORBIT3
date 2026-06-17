@@ -70,27 +70,27 @@ double** Grid3D::getSlice2D(int zInd){return Arr3D[zInd];}
 Grid2D* Grid3D::getGrid2D(int zInd){return grid2dArr[zInd];}
 
 /** Returns the grid size in x-direction */
-int Grid3D::getSizeX(){
+int Grid3D::getSizeX() const{
 	return nX_;
 }
 
 /** Returns the grid size in y-direction */
-int Grid3D::getSizeY(){
+int Grid3D::getSizeY() const{
 	return nY_;
 }
 
 /** Returns the grid size in z-direction */
-int Grid3D::getSizeZ(){
+int Grid3D::getSizeZ() const{
 	return nZ_;
 }
 
 /** Returns the grid point x-coordinate for this index. */
-double Grid3D::getGridX(int index){
+double Grid3D::getGridX(int index) const{
 	return xMin_ + index*dx_;
 }
 
 /** Returns the grid point y-coordinate for this index. */
-double Grid3D::getGridY(int index){
+double Grid3D::getGridY(int index) const{
 	return yMin_ + index*dy_;
 }
 
@@ -100,42 +100,42 @@ double Grid3D::getGridY(int index){
 	We redefined it to allow the periodicity
 	along the longitudinal coordinate in the beam.
 */
-double Grid3D::getGridZ(int index){
+double Grid3D::getGridZ(int index) const{
 	return zMin_ + (index+0.5)*dz_;
 }
 
 /** Returns the grid step along x-axis */
-double Grid3D::getStepX(){
+double Grid3D::getStepX() const{
 	return dx_;
 }
 
 /** Returns the grid step along y-axis */
-double Grid3D::getStepY(){
+double Grid3D::getStepY() const{
 	return dy_;
 }
 
 /** Returns the grid step along z-axis */
-double Grid3D::getStepZ(){
+double Grid3D::getStepZ() const{
 	return dz_;
 }
 
 /** Returns the max x in the grid points */
-double Grid3D::getMaxX(){return xMax_;};
+double Grid3D::getMaxX() const{return xMax_;};
 
 /** Returns the min x in the grid points */
-double Grid3D::getMinX(){return xMin_;};
+double Grid3D::getMinX() const{return xMin_;};
 
 /** Returns the max y in the grid points */
-double Grid3D::getMaxY(){return yMax_;};
+double Grid3D::getMaxY() const{return yMax_;};
 
 /** Returns the min y in the grid points */
-double Grid3D::getMinY(){return yMin_;};
+double Grid3D::getMinY() const{return yMin_;};
 
 /** Returns the max z in the grid points */
-double Grid3D::getMaxZ(){return zMax_;};
+double Grid3D::getMaxZ() const{return zMax_;};
 
 /** Returns the min z in the grid points */
-double Grid3D::getMinZ(){return zMin_;};
+double Grid3D::getMinZ() const{return zMin_;};
 
 /** Sets the limits for the x-grid */
 void Grid3D::setGridX(double xMin, double xMax){
@@ -209,14 +209,14 @@ void Grid3D::multiply(double coeff)
   }
 }
 
-void Grid3D::getIndAndFracX(double x, int& ind, double& frac){
+void Grid3D::getIndAndFracX(double x, int& ind, double& frac) const{
    ind  = int ( (x - xMin_)/dx_ + 0.5 );
    if(ind < 1) ind = 1;
    if(ind > (nX_-2)) ind = nX_ - 2;
    frac = (x - (xMin_ + ind*dx_))/dx_;
 }
 
-void Grid3D::getIndAndFracY(double y, int& ind, double& frac){
+void Grid3D::getIndAndFracY(double y, int& ind, double& frac) const{
    ind  = int ( (y - yMin_)/dy_ + 0.5 );
    if(ind < 1) ind = 1;
    if(ind > (nY_-2)) ind = nY_ - 2;
@@ -225,7 +225,7 @@ void Grid3D::getIndAndFracY(double y, int& ind, double& frac){
 
 void Grid3D::getGridIndAndFrac(double x, int& xInd, double& xFrac,
 	double y, int& yInd, double& yFrac,
-	double z, int& zInd, double& zFrac)
+	double z, int& zInd, double& zFrac) const
 {
   this->getIndAndFracX( x, xInd, xFrac);
   this->getIndAndFracY( y, yInd, yFrac);
@@ -513,7 +513,7 @@ void Grid3D::binValueSlice2D(double macroSize, double x, double y, double z)
 */
 void Grid3D::calcGradient(double x,double& gradX,
 			  double y,double& gradY,
-			  double z,double& gradZ)
+			  double z,double& gradZ) const
 {
   int iX, iY, iZ;
   double xFrac, yFrac, zFrac;
@@ -793,7 +793,7 @@ double Grid3D::calcValueOnY(int iX, int iY, int iZ, double Wym,double Wy0,double
 /** Calculates Gradient from each z-sheet without interpolating in z */
 double Grid3D::calcSheetGradient(int iZ,int iX,int iY,
 				 double xm,double x0,double xp,
-				 double ym,double y0,double yp)
+				 double ym,double y0,double yp) const
 {
   double sheetGradient =
     xm * ym * Arr3D[iZ][iX-1][iY-1] +

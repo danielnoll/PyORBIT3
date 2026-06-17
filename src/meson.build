@@ -13,8 +13,22 @@ base = meson.current_source_dir() + '/core'
 dependencies = []
 
 dependencies += python.dependency()
-dependencies += dependency('fftw3', version: '>= 3.0.0', required: true)
+dep_fftw = dependency('fftw3', version: '>= 3.0.0', required: true)
+dependencies += dep_fftw
 
+# Enable OpenMP if available
+dep_openmp = dependency('openmp')
+if get_option('USE_OPENMP') and dep_openmp.found()
+		add_global_arguments('-DWITH_OPENMP', language : 'cpp')
+		dependencies += dep_openmp
+endif
+
+# Enable OpenMP if requested
+if get_option('USE_FFTW_THREADS')
+		add_global_arguments('-DWITH_FFTW3_THREADS', language : 'cpp')
+		dep_fftw_threads = cpp.find_library('fftw3_threads', dirs: [dep_fftw.get_variable('libdir')])
+		dependencies += dep_fftw_threads
+endif
 # Detecting if MPICH or OPENMPI are installed and enabling support if present
 
 
@@ -247,7 +261,8 @@ sources = files([
 	'teapot/wrap_teapotbase.cc',
 	'teapot/wrap_matrix_generator.cc',
 	'teapot/teapotbase.cc',
-	'teapot/MatrixGenerator.cc'
+	'teapot/MatrixGenerator.cc',
+	'openmp/orbit_openmp.cc'
 ])
 inc = include_directories([
     'main',
@@ -256,6 +271,7 @@ inc = include_directories([
     'utils/ellipticalint',
     'teapot',
     'mpi',
+		'openmp',
     'orbit/ParticlesAttributes',
     'orbit/Errors',
     'orbit/FieldTracker',
