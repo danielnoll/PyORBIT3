@@ -154,6 +154,11 @@ public:
    */
     void binValueSlice2D(double macroSize, double x, double y, double z);    
 
+  std::size_t array_index(int iz, int ix, int iy) const;
+
+  /** Bins the value onto grid contained in arr and indexed by index_arr */
+  void binValue(double* arr, double macroSize, double x, double y, double z) const;
+
   /** Bins the value onto grid */
   void binValue(double macroSize, double x, double y, double z);
 
@@ -176,6 +181,11 @@ public:
 
   /** synchronize MPI */
   void synchronizeMPI(pyORBIT_MPI_Comm* pyComm);
+
+#ifdef WITH_OPENMP
+  /** Charge density cache for each thread */
+  std::vector<double> rho;
+#endif
 
 protected:
   //---------------------------------------

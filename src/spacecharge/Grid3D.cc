@@ -19,6 +19,8 @@
 
 #include "Grid3D.hh"
 
+#include "orbit_openmp.hh"
+
 #include <iostream>
 
 using namespace OrbitUtils;
@@ -273,6 +275,12 @@ double Grid3D::getValueOnGrid(int ix, int iy, int iz){
 	return Arr3D[iz][ix][iy];
 }
 
+std::size_t Grid3D::array_index(int iz, int ix, int iy) const
+{ 
+  return nX_*nY_*iz + nY_*ix + iy; 
+}
+
+
 /**
 	Bins the Bunch into the 3D grid. If bunch has a macrosize particle attribute it will be used.
 	This method will wrap the bunch particles in the longitudonal directions if
@@ -292,8 +300,41 @@ void Grid3D::binBunch(Bunch* bunch,double lambda){
 			if(longWrapping != 0) z = remainder(z,lambda);
 			this->binValue(m_size,part_coord_arr[i][0],part_coord_arr[i][2],z);
 		}
-		return;
-	}
+	} else {
+#ifdef WITH_OPENMP
+    double const m_size = bunch->getMacroSize();
+    int const nPart = bunch->getSize();
+
+    #pragma omp parallel
+    {
+      int const nthreads = orbit_omp_get_num_threads();
+      int const ithread  = orbit_omp_get_thread_num();
+      #pragma omp single
+      {
+        if(rho.size() < nthreads*nX_*nY_*nZ_)
+          rho.resize(nthreads*nX_*nY_*nZ_);
+      }
+
+      std::fill(rho.begin() + ithread*nX_*nY_*nZ_, rho.begin() + (ithread+1)*nX_*nY_*nZ_, 0);
+
+      #pragma omp for
+      for(int i = 0; i < nPart; i++){
+        double z = part_coord_arr[i][4];
+        if(longWrapping != 0) z = remainder(z,lambda);
+        this->binValue(&rho.at(ithread*nX_*nY_*nZ_), m_size,part_coord_arr[i][0],part_coord_arr[i][2],z);
+      }
+
+      #pragma omp for
+      for(int iz = 0; iz < nZ_; ++iz) {
+        for(int ix = 0; ix < nX_; ++ix) {
+          for(int iy = 0; iy < nY_; ++iy) {
+            for(int i = 0; i < nthreads; ++i)
+              Arr3D[iz][ix][iy] += rho[i*nX_*nY_*nZ_ + array_index(iz,ix,iy)];
+          }
+        }
+      }
+    }
+#else
 	double m_size = bunch->getMacroSize();
 	int nParts = bunch->getSize();
 	for(int i = 0; i < nParts; i++){
@@ -301,6 +342,8 @@ void Grid3D::binBunch(Bunch* bunch,double lambda){
 		if(longWrapping != 0) z = remainder(z,lambda);
 		this->binValue(m_size,part_coord_arr[i][0],part_coord_arr[i][2],z);
 	}
+#endif
+  }
 }
 
 
@@ -308,6 +351,124 @@ void Grid3D::binBunch(Bunch* bunch,double lambda){
 void Grid3D::binBunch(Bunch* bunch){
 	longWrapping = 0;
 	this->binBunch(bunch,0.);
+}
+
+void Grid3D::binValue(double* arr, double macroSize, double x, double y, double z) const
+{
+	if(x < xMin_ || x > xMax_ || y < yMin_ || y > yMax_ || z < zMin_ || z > zMax_) return;
+  int iX, iY, iZ;
+  double xFrac, yFrac, zFrac;
+  getGridIndAndFrac(x, iX, xFrac, y, iY, yFrac, z, iZ, zFrac);
+
+  //Calculate interpolation weight and indexes
+  double Wxm,Wx0,Wxp,Wym,Wy0,Wyp;
+  double Wzm,Wz0,Wzp;
+  Wzm = Wz0 = Wzp = 0.0;
+
+  Wxm = 0.5 * (0.5 - xFrac) * (0.5 - xFrac);
+  Wx0 = 0.75 - xFrac * xFrac;
+  Wxp = 0.5 * (0.5 + xFrac) * (0.5 + xFrac);
+  Wym = 0.5 * (0.5 - yFrac) * (0.5 - yFrac);
+  Wy0 = 0.75 - yFrac * yFrac;
+  Wyp = 0.5 * (0.5 + yFrac) * (0.5 + yFrac);
+
+  int iZ0 = iZ;
+  int iZm = iZ-1;
+  int iZp = iZ+1;
+  if(iZm < 0) iZm = nZ_ - 1;
+  if(iZp >= nZ_) iZp = 0;
+
+  if( nZ_ >= 3){
+    Wzm = 0.5 * (0.5 - zFrac) * (0.5 - zFrac);
+    Wz0 = 0.75 - zFrac * zFrac;
+    Wzp = 0.5 * (0.5 + zFrac) * (0.5 + zFrac);
+  }
+  if( nZ_ == 2){
+    Wzm = 1.0 - zFrac; // for zInd=0
+    Wz0 = 0.0;
+    Wzp = zFrac;       // for zInd=1
+  }
+
+  //Add weight of particle to Arr3D
+  double tmp;
+  if( nZ_ >= 3){
+    tmp = Wym * Wzm *macroSize;
+    arr[array_index(iZm, iX-1, iY-1)] += Wxm * tmp;
+    arr[array_index(iZm, iX  , iY-1)] += Wx0 * tmp;
+    arr[array_index(iZm, iX+1, iY-1)] += Wxp * tmp;
+    tmp = Wy0 * Wzm *macroSize;
+    arr[array_index(iZm, iX-1, iY  )] += Wxm * tmp;
+    arr[array_index(iZm, iX  , iY  )] += Wx0 * tmp;
+    arr[array_index(iZm, iX+1, iY  )] += Wxp * tmp;
+    tmp = Wyp * Wzm *macroSize;
+    arr[array_index(iZm, iX-1, iY+1)] += Wxm * tmp;
+    arr[array_index(iZm, iX  , iY+1)] += Wx0 * tmp;
+    arr[array_index(iZm, iX+1, iY+1)] += Wxp * tmp;
+    tmp = Wym * Wz0 *macroSize;
+    arr[array_index(iZ0, iX-1, iY-1)] += Wxm * tmp;
+    arr[array_index(iZ0, iX  , iY-1)] += Wx0 * tmp;
+    arr[array_index(iZ0, iX+1, iY-1)] += Wxp * tmp;
+    tmp = Wy0 * Wz0 *macroSize;
+    arr[array_index(iZ0, iX-1, iY  )] += Wxm * tmp;
+    arr[array_index(iZ0, iX  , iY  )] += Wx0 * tmp;
+    arr[array_index(iZ0, iX+1, iY  )] += Wxp * tmp;
+    tmp = Wyp * Wz0 *macroSize;
+    arr[array_index(iZ0, iX-1, iY+1)] += Wxm * tmp;
+    arr[array_index(iZ0, iX  , iY+1)] += Wx0 * tmp;
+    arr[array_index(iZ0, iX+1, iY+1)] += Wxp * tmp;
+    tmp = Wym * Wzp *macroSize;
+    arr[array_index(iZp, iX-1, iY-1)] += Wxm * tmp;
+    arr[array_index(iZp, iX  , iY-1)] += Wx0 * tmp;
+    arr[array_index(iZp, iX+1, iY-1)] += Wxp * tmp;
+    tmp = Wy0 * Wzp *macroSize;
+    arr[array_index(iZp, iX-1, iY  )] += Wxm * tmp;
+    arr[array_index(iZp, iX  , iY  )] += Wx0 * tmp;
+    arr[array_index(iZp, iX+1, iY  )] += Wxp * tmp;
+    tmp = Wyp * Wzp *macroSize;
+    arr[array_index(iZp, iX-1, iY+1)] += Wxm * tmp;
+    arr[array_index(iZp, iX  , iY+1)] += Wx0 * tmp;
+    arr[array_index(iZp, iX+1, iY+1)] += Wxp * tmp;
+  }
+  if( nZ_ == 2){
+    tmp = Wym * Wzm *macroSize;
+    arr[array_index(0, iX-1, iY-1)] += Wxm * tmp;
+    arr[array_index(0, iX  , iY-1)] += Wx0 * tmp;
+    arr[array_index(0, iX+1, iY-1)] += Wxp * tmp;
+    tmp = Wy0 * Wzm *macroSize;
+    arr[array_index(0, iX-1, iY  )] += Wxm * tmp;
+    arr[array_index(0, iX  , iY  )] += Wx0 * tmp;
+    arr[array_index(0, iX+1, iY  )] += Wxp * tmp;
+    tmp = Wyp * Wzm *macroSize;
+    arr[array_index(0, iX-1, iY+1)] += Wxm * tmp;
+    arr[array_index(0, iX  , iY+1)] += Wx0 * tmp;
+    arr[array_index(0, iX+1, iY+1)] += Wxp * tmp;
+    tmp = Wym * Wzp *macroSize;
+    arr[array_index(1, iX-1, iY-1)] += Wxm * tmp;
+    arr[array_index(1, iX  , iY-1)] += Wx0 * tmp;
+    arr[array_index(1, iX+1, iY-1)] += Wxp * tmp;
+    tmp = Wy0 * Wzp *macroSize;
+    arr[array_index(1, iX-1, iY  )] += Wxm * tmp;
+    arr[array_index(1, iX  , iY  )] += Wx0 * tmp;
+    arr[array_index(1, iX+1, iY ) ] += Wxp * tmp;
+    tmp = Wyp * Wzp *macroSize;
+    arr[array_index(1, iX-1, iY+1)] += Wxm * tmp;
+    arr[array_index(1, iX  , iY+1)] += Wx0 * tmp;
+    arr[array_index(1, iX+1, iY+1)] += Wxp * tmp;
+  }
+  if( nZ_ == 1){
+    tmp = Wym * macroSize;
+    arr[array_index(0, iX-1, iY-1)] += Wxm * tmp;
+    arr[array_index(0, iX  , iY-1)] += Wx0 * tmp;
+    arr[array_index(0, iX+1, iY-1)] += Wxp * tmp;
+    tmp = Wy0 * macroSize;
+    arr[array_index(0, iX-1, iY  )] += Wxm * tmp;
+    arr[array_index(0, iX  , iY  )] += Wx0 * tmp;
+    arr[array_index(0, iX+1, iY  )] += Wxp * tmp;
+    tmp = Wyp * macroSize;
+    arr[array_index(0, iX-1, iY+1)] += Wxm * tmp;
+    arr[array_index(0, iX  , iY+1)] += Wx0 * tmp;
+    arr[array_index(0, iX+1, iY+1)] += Wxp * tmp;
+  }
 }
 
 /** Bins the value into the grid 3D assuming a wrapped longitudinal direction */
